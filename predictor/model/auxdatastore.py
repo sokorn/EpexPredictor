@@ -1,4 +1,5 @@
 import logging
+import math
 from datetime import datetime, timedelta, timezone, tzinfo
 import statistics
 from typing import Generator, cast
@@ -51,12 +52,35 @@ class AuxDataStore(DataStore):
                 df[f"day_{i}"] = df["time"].apply(lambda t, i=i: 1 if t.astimezone(tzlocal).weekday() == i else 0)
             
             timecols : list[pd.Series|pd.DataFrame] = []
-            for h in range(24):
-                for m in range(0, 60, 15):
-                    col = df["time"].apply(lambda t, h=h, m=m: self.is_timestamp(tzlocal, t, h, m))
-                    col.name = f"i_{h}_{m}"
-                    timecols.append(col)
-            
+
+            # Fourier features for time of day (replaces 96 one-hot time slot features)
+            # Captures daily cyclical patterns more efficiently
+            def time_to_fourier(t, tz):
+                local = t.astimezone(tz)
+                # Time of day as fraction (0 to 1)
+                tod = (local.hour * 60 + local.minute) / (24 * 60)
+                return tod
+
+            tod = df["time"].apply(lambda t, fn=time_to_fourier: fn(t, tzlocal))
+
+            # 24-hour cycle (primary daily pattern)
+            tod_sin = tod.apply(lambda x: math.sin(2 * math.pi * x))
+            tod_sin.name = "tod_sin"
+            timecols.append(tod_sin)
+
+            tod_cos = tod.apply(lambda x: math.cos(2 * math.pi * x))
+            tod_cos.name = "tod_cos"
+            timecols.append(tod_cos)
+
+            # 12-hour cycle (captures morning/evening peaks)
+            tod_sin2 = tod.apply(lambda x: math.sin(4 * math.pi * x))
+            tod_sin2.name = "tod_sin2"
+            timecols.append(tod_sin2)
+
+            tod_cos2 = tod.apply(lambda x: math.cos(4 * math.pi * x))
+            tod_cos2.name = "tod_cos2"
+            timecols.append(tod_cos2)
+
             locinfo = LocationInfo(name=self.region.country_code, region=self.region.country_code, timezone=self.region.timezone, latitude=statistics.mean(self.region.latitudes), longitude=statistics.mean(self.region.longitudes))
             sr_influence = df["time"].apply(lambda t, loc=locinfo: min(180, abs((t - sun.sun(loc.observer, date=t)["sunrise"]).total_seconds() / 60)))
             sr_influence.name = "sr_influence"
@@ -100,10 +124,6 @@ class AuxDataStore(DataStore):
             curr = next_day
 
 
-    def is_timestamp(self, tz : tzinfo, t : datetime, h : int, m : int) -> int:
-        local = t.astimezone(tz)
-        return 1 if local.hour == h and local.minute == m else 0
-    
     def is_holiday(self, t : pd.Timestamp) -> float:
         if t.weekday() == 6:
             return 1
@@ -113,3 +133,4 @@ class AuxDataStore(DataStore):
         cnt_holiday = sum(bool(date in h)
                       for h in self.region.holidays)
         return cnt_holiday / len(self.region.holidays)
+

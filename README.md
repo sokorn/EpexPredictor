@@ -33,9 +33,10 @@ Weather features (per sample location):
 Lagged price features:
 - Price from 24 hours ago (price_lag_1d)
 - Price from 7 days ago (price_lag_7d)
+- Price volatility: rolling 7-day standard deviation of prices (shifted by 1 day)
 
 Time features:
-- Hour of day (one-hot encoded, 96 intervals)
+- Hour of day (Fourier encoded: tod_sin, tod_cos, tod_sin2, tod_cos2)
 - Day of the week (Monday to Saturday)
 - Holiday/Sunday indicator (regional holidays weighted by fraction of regions, e.g. 0.5 if half the regions have the holiday)
 - Sunrise influence: how many minutes between sunrise and now, capped at 3 hours ($\min(180, |t_{now} - t_{sunrise}|)$ minutes)
@@ -58,10 +59,10 @@ Remarks:
 Results (1-day ahead prediction):
 | Country | MAE (ct/kWh) | RMSE (ct/kWh) |
 |---------|--------------|---------------|
-| DE | 1.63 | 2.58 |
-| AT | 1.70 | 2.68 |
-| BE | 1.63 | 2.49 |
-| NL | 1.64 | 2.55 |
+| DE | 1.58 | 2.49 |
+| AT | 1.71 | 2.70 |
+| BE | 1.60 | 2.44 |
+| NL | 1.60 | 2.48 |
 
 Some observations:
 - At night, predictions are typically within 0.5 ct/kWh

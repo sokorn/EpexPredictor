@@ -48,7 +48,13 @@ def sample_date_range(sample_datetime):
 
 @pytest.fixture
 def sample_weather_data():
-    """Create sample weather data DataFrame."""
+    """Create sample weather data DataFrame.
+
+    Column names match the actual implementation in weatherstore.py:
+    - wind_{i} for wind speed at 80m
+    - temp_{i} for temperature at 2m
+    - irradiance_{i} for global tilted irradiance
+    """
     dates = pd.date_range(
         start="2025-11-01",
         end="2025-11-02",
@@ -56,12 +62,12 @@ def sample_weather_data():
         tz="UTC"
     )
     data = {
-        "wind_speed_80m_0": [5.0] * len(dates),
-        "wind_speed_80m_1": [6.0] * len(dates),
-        "temperature_2m_0": [10.0] * len(dates),
-        "temperature_2m_1": [11.0] * len(dates),
-        "global_tilted_irradiance_0": [100.0] * len(dates),
-        "global_tilted_irradiance_1": [110.0] * len(dates),
+        "wind_0": [5.0] * len(dates),
+        "wind_1": [6.0] * len(dates),
+        "temp_0": [10.0] * len(dates),
+        "temp_1": [11.0] * len(dates),
+        "irradiance_0": [100.0] * len(dates),
+        "irradiance_1": [110.0] * len(dates),
     }
     df = pd.DataFrame(data, index=dates)
     df.index.name = "time"
@@ -93,13 +99,23 @@ def sample_price_data():
 
 @pytest.fixture
 def sample_aux_data():
-    """Create sample auxiliary data DataFrame."""
+    """Create sample auxiliary data DataFrame.
+
+    Uses Fourier features for time-of-day encoding (tod_sin, tod_cos, tod_sin2, tod_cos2)
+    instead of the old 96 one-hot time slot columns.
+    """
+    import math
+
     dates = pd.date_range(
         start="2025-11-01",
         end="2025-11-02",
         freq="15min",
         tz="UTC"
     )
+
+    # Compute Fourier features for time of day
+    tod_values = [(d.hour * 60 + d.minute) / (24 * 60) for d in dates]
+
     data = {
         "holiday": [0.0] * len(dates),
         "day_0": [1 if d.weekday() == 0 else 0 for d in dates],
@@ -108,13 +124,13 @@ def sample_aux_data():
         "day_3": [1 if d.weekday() == 3 else 0 for d in dates],
         "day_4": [1 if d.weekday() == 4 else 0 for d in dates],
         "day_5": [1 if d.weekday() == 5 else 0 for d in dates],
+        "tod_sin": [math.sin(2 * math.pi * t) for t in tod_values],
+        "tod_cos": [math.cos(2 * math.pi * t) for t in tod_values],
+        "tod_sin2": [math.sin(4 * math.pi * t) for t in tod_values],
+        "tod_cos2": [math.cos(4 * math.pi * t) for t in tod_values],
         "sr_influence": [60] * len(dates),
         "ss_influence": [60] * len(dates),
     }
-    # Add time slot columns (format: i_{hour}_{minute})
-    for h in range(24):
-        for m in range(0, 60, 15):
-            data[f"i_{h}_{m}"] = [1 if (d.hour == h and d.minute == m) else 0 for d in dates]
 
     df = pd.DataFrame(data, index=dates)
     df.index.name = "time"

@@ -54,26 +54,6 @@ class TestAuxDataStoreIsHoliday:
         assert result == pytest.approx(1.0)
 
 
-class TestAuxDataStoreIsTimestamp:
-    """Tests for is_timestamp method."""
-
-    def test_matching_timestamp(self, sample_region):
-        """Test that matching hour/minute returns 1."""
-        store = AuxDataStore(sample_region)
-        tz = timezone.utc
-        dt = datetime(2025, 11, 1, 12, 30, tzinfo=tz)
-        result = store.is_timestamp(tz, dt, 12, 30)
-        assert result == 1
-
-    def test_non_matching_timestamp(self, sample_region):
-        """Test that non-matching hour/minute returns 0."""
-        store = AuxDataStore(sample_region)
-        tz = timezone.utc
-        dt = datetime(2025, 11, 1, 12, 30, tzinfo=tz)
-        result = store.is_timestamp(tz, dt, 10, 0)
-        assert result == 0
-
-
 class TestAuxDataStoreFetchMissingData:
     """Tests for fetch_missing_data method."""
 
@@ -96,9 +76,11 @@ class TestAuxDataStoreFetchMissingData:
         # Day of week columns
         for i in range(6):
             assert f"day_{i}" in store.data.columns
-        # Time slot columns (format: i_{hour}_{minute})
-        assert "i_0_0" in store.data.columns  # midnight
-        assert "i_23_45" in store.data.columns  # last slot
+        # Fourier time-of-day features (replaced 96 one-hot time slots)
+        assert "tod_sin" in store.data.columns
+        assert "tod_cos" in store.data.columns
+        assert "tod_sin2" in store.data.columns
+        assert "tod_cos2" in store.data.columns
         # Sunrise/sunset influence
         assert "sr_influence" in store.data.columns
         assert "ss_influence" in store.data.columns
@@ -137,42 +119,35 @@ class TestAuxDataStoreDayOfWeekEncoding:
             assert day_sum in [0, 1]
 
 
-class TestAuxDataStoreTimeSlotEncoding:
-    """Tests for time slot encoding."""
+class TestAuxDataStoreFourierFeatures:
+    """Tests for Fourier time-of-day features."""
 
     @pytest.mark.asyncio
-    async def test_slot_columns_are_one_hot(self, sample_region):
-        """Test that time slot columns are one-hot encoded."""
+    async def test_fourier_features_range(self, sample_region):
+        """Test that Fourier features are in valid range [-1, 1]."""
         store = AuxDataStore(sample_region)
-        start = datetime(2025, 11, 1, tzinfo=timezone.utc)
-        end = datetime(2025, 11, 1, 1, tzinfo=timezone.utc)
-
-        await store.fetch_missing_data(start, end)
-
-        # For each row, exactly one slot column should be 1
-        # Columns are named i_{hour}_{minute}
-        slot_cols = [f"i_{h}_{m}" for h in range(24) for m in range(0, 60, 15)]
-        for _, row in store.data.iterrows():
-            slot_sum = sum(row[col] for col in slot_cols if col in row.index)
-            assert slot_sum == 1
-
-    @pytest.mark.asyncio
-    async def test_correct_slots_for_midnight(self, sample_region):
-        """Test that time slots are one-hot encoded properly."""
-        store = AuxDataStore(sample_region)
-        # Use a range that will generate data
         start = datetime(2025, 11, 1, tzinfo=timezone.utc)
         end = datetime(2025, 11, 3, tzinfo=timezone.utc)
 
         await store.fetch_missing_data(start, end)
 
-        # Check that data was created and has time slot columns
-        assert not store.data.empty
-        # Each row should have exactly one time slot set to 1
-        slot_cols = [f"i_{h}_{m}" for h in range(24) for m in range(0, 60, 15)]
-        for _, row in store.data.head(10).iterrows():
-            slot_sum = sum(row[col] for col in slot_cols if col in row.index)
-            assert slot_sum == 1
+        # All Fourier features should be between -1 and 1
+        for col in ["tod_sin", "tod_cos", "tod_sin2", "tod_cos2"]:
+            assert store.data[col].min() >= -1.0
+            assert store.data[col].max() <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_fourier_features_cyclical(self, sample_region):
+        """Test that Fourier features capture daily cycle."""
+        store = AuxDataStore(sample_region)
+        start = datetime(2025, 11, 1, tzinfo=timezone.utc)
+        end = datetime(2025, 11, 3, tzinfo=timezone.utc)
+
+        await store.fetch_missing_data(start, end)
+
+        # sin and cos should have different values at different times
+        assert store.data["tod_sin"].std() > 0.1
+        assert store.data["tod_cos"].std() > 0.1
 
 
 class TestAuxDataStoreSunriseSunset:

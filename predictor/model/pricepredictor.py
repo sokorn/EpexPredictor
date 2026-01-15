@@ -107,9 +107,18 @@ class PricePredictor:
         historical_prices["price_lag_1d"] = historical_prices["price"].shift(periods_1d)
         historical_prices["price_lag_7d"] = historical_prices["price"].shift(periods_7d)
 
+        # Price volatility: rolling 7-day std, shifted by 1 day to avoid leakage
+        # High volatility periods tend to have harder-to-predict prices
+        historical_prices["price_volatility"] = (
+            historical_prices["price"]
+            .rolling(window=periods_7d, min_periods=periods_1d)
+            .std()
+            .shift(periods_1d)
+        )
+
         # Extract just the lagged features and reindex to match weather data range
         # This ensures we have rows for future dates where prices don't exist yet
-        lagged_features = historical_prices[["price_lag_1d", "price_lag_7d"]]
+        lagged_features = historical_prices[["price_lag_1d", "price_lag_7d", "price_volatility"]]
         lagged_features = lagged_features.reindex(weather.index).ffill()
 
         df = pd.concat([weather, auxdata, lagged_features], axis=1).dropna()
